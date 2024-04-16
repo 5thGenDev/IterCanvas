@@ -316,3 +316,5 @@ class Precond(torch.nn.Module):
         return D_x
 
 #----------------------------------------------------------------------------
+# Patch version of EDM2
+
