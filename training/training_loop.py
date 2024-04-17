@@ -134,6 +134,10 @@ def training_loop(
     loss_scaling        = 1,        # Loss scaling factor for reducing FP16 under/overflows.
     force_finite        = True,     # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
+
+    real_p              = 0.5,      # Ratio of input images is full size per batch 
+    progressive         = False,    # Two patch-size schedulings: Stochastic and Progressive - see equation (5) in Patch Diffusion
+
     device              = torch.device('cuda'),
 ):
     # Initialize.
@@ -167,6 +171,16 @@ def training_loop(
     interface_kwargs = dict(img_resolution=ref_image.shape[-1], img_channels=ref_image.shape[1], label_dim=ref_label.shape[-1])
     net = dnnlib.util.construct_class_by_name(**network_kwargs, **interface_kwargs)
     net.train().requires_grad_(True).to(device)
+
+    # Patch Diffusion stuffs
+    if encoder_kwargs.get('class_name') == 'training.encoders.StabilityVAEEncoder':
+        p_list = np.array([(1 - real_p), real_p])
+        patch_list = np.array([img_resolution // 2, img_resolution])
+        batch_mul_avg = np.sum(p_list * np.array([2, 1]))
+    elif encoder_kwargs.get('class_name') == 'training.encoders.StandardRGBEncoder':
+        p_list = np.array([(1-real_p)*2/5, (1-real_p)*3/5, real_p])
+        patch_list = np.array([img_resolution//4, img_resolution//2, img_resolution])
+        batch_mul_avg = np.sum(np.array(p_list) * np.array([4, 2, 1]))
 
     # Print network summary.
     if dist.get_rank() == 0:
@@ -274,11 +288,26 @@ def training_loop(
         optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
-                images, labels = next(dataset_iterator)
+                if progressive:
+                    p_cumsum = p_list.cumsum()
+                    p_cumsum[-1] = 10.
+                    prog_mask = (cur_nimg // 1000 / total_kimg) <= p_cumsum
+                    patch_size = int(patch_list[prog_mask][0])
+                    batch_mul_avg = batch_mul_dict[patch_size] // batch_mul_dict[img_resolution]
+                else:
+                    patch_size = int(np.random.choice(patch_list, p=p_list))
+
+                batch_mul = batch_mul_dict[patch_size] // batch_mul_dict[img_resolution]
+                images, labels = [], []
+                for _ in range(batch_mul):
+                    images_, labels_ = next(dataset_iterator)
+                    images.append(images_), labels.append(labels_)
+                images, labels = torch.cat(images, dim=0), torch.cat(labels, dim=0)
+                del images_, labels_
                 images = encoder.encode_latents(images.to(device))
                 loss = loss_fn(net=ddp, images=images, labels=labels.to(device))
                 training_stats.report('Loss/loss', loss)
-                loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+                loss.sum().mul(loss_scaling / batch_gpu_total / batch_mul).backward()
 
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
@@ -292,9 +321,10 @@ def training_loop(
         optimizer.step()
 
         # Update EMA and training state.
-        state.cur_nimg += batch_size
+        state.cur_nimg += int(batch_size * batch_mul_avg)
         if ema is not None:
-            ema.update(cur_nimg=state.cur_nimg, batch_size=batch_size)
+            ema.update(cur_nimg=state.cur_nimg, batch_size=batch_size * batch_mul_avg)
+        # ema_beta = 0.5 ** (batch_size * batch_mul_avg / max(ema_halflife_nimg, 1e-8))
         cumulative_training_time += time.time() - batch_start_time
 
 #----------------------------------------------------------------------------
