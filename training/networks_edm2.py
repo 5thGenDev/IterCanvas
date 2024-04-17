@@ -354,7 +354,7 @@ class Patch_Precond(torch.nn.Module):
         c_noise = sigma.flatten().log() / 4
 
         # Run the model
-        x_in = torch.cat([c_in * x, x_pos], dim=1) if x_pos is not None else c_in * x
+        x_in = torch.cat([c_in * x, x_pos], dim=1) if x_pos is not None else c_in * x        # Add-on Patch Diffusion Precond
         F_x = self.unet(x_in, c_noise, class_labels, **unet_kwargs)
         D_x = c_skip * x + c_out * F_x.to(torch.float32)
         
