@@ -66,10 +66,17 @@ def setup_training_config(preset='edm2-img512-s', **opts):
     else:
         raise click.ClickException(f'--data: Unsupported channel count {dataset_channels}')
 
-    # Hyperparameters.
+    # Hyperparameters with Patch Diffusion add-on.
     c.update(total_nimg=opts.duration, batch_size=opts.batch)
-    c.network_kwargs = dnnlib.EasyDict(class_name='training.networks_edm2.Precond', model_channels=opts.channels, dropout=opts.dropout)
-    c.loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.EDM2Loss', P_mean=opts.P_mean, P_std=opts.P_std)
+    if opts.precond == 'pedm2':
+        c.network_kwargs = dnnlib.EasyDict(class_name='training.networks_edm2.Patch_Precond', model_channels=opts.channels, dropout=opts.dropout)
+        c.loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.Patch_EDM2Loss', P_mean=opts.P_mean, P_std=opts.P_std)
+    else:
+        assert opts.precond == 'edm2'
+        c.network_kwargs = dnnlib.EasyDict(class_name='training.networks_edm2.Precond', model_channels=opts.channels, dropout=opts.dropout)
+        c.loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.EDM2Loss', P_mean=opts.P_mean, P_std=opts.P_std)
+    c.real_p = opts.real_p
+    c.progressive = opts.progressive
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', ref_lr=opts.lr, ref_batches=opts.decay)
 
     # Performance-related options.
@@ -166,9 +173,10 @@ def parse_nimg(s):
 @click.option('--seed',             help='Random seed', metavar='INT',                          type=int, default=0, show_default=True)
 @click.option('-n', '--dry-run',    help='Print training options and exit',                     is_flag=True)
 
-#Patch Diffusion options
-@click.option('--real_p',        help='Full size image ratio', metavar='INT',                       type=click.FloatRange(min=0, max=1), default=0.5, show_default=True)
-@click.option('--progressive',      help='Training on latent embeddings', metavar='BOOL',           type=bool, default=False, show_default=True)
+#Patch Diffusion options and bring back precondition option from EDM1
+@click.option('--real_p',           help='Full size image ratio', metavar='INT',                       type=click.FloatRange(min=0, max=1), default=0.5, show_default=True)
+@click.option('--progressive',      help='Training on latent embeddings', metavar='BOOL',              type=bool, default=False, show_default=True)
+@click.option('--precond',          help='Preconditioning & loss function', metavar='vp|ve|edm',       type=click.Choice(['edm2', 'pedm2']), default='pedm2', show_default=True)
 
 def cmdline(outdir, dry_run, **opts):
     """Train diffusion models according to the EDM2 recipe from the paper
