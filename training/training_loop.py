@@ -86,13 +86,13 @@ class Patch_EDM2Loss:
         return padded, images_pos
 
     def __call__(self, net, images, patch_size, labels=None):
-        images, images_pos = self.pachify(images, patch_size)
+        images, images_pos = self.pachify(images, patch_size)                                            # where Patch Diffusion loss is used
         
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
         noise = torch.randn_like(images) * sigma
-        denoised, logvar = net(images + noise, sigma, x_pos=images_pos, labels, return_logvar=True)
+        denoised, logvar = net(images + noise, sigma, x_pos=images_pos, labels, return_logvar=True)      # where Patch Diffusion loss is used
         loss = (weight / logvar.exp()) * ((denoised - images) ** 2) + logvar
         return loss
         
