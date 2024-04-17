@@ -288,6 +288,7 @@ def training_loop(
         optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
+                # Patch Diffusion scheduling #
                 if progressive:
                     p_cumsum = p_list.cumsum()
                     p_cumsum[-1] = 10.
@@ -304,6 +305,7 @@ def training_loop(
                     images.append(images_), labels.append(labels_)
                 images, labels = torch.cat(images, dim=0), torch.cat(labels, dim=0)
                 del images_, labels_
+                # -------------------------- #
                 images = encoder.encode_latents(images.to(device))
                 loss = loss_fn(net=ddp, images=images, labels=labels.to(device))
                 training_stats.report('Loss/loss', loss)
