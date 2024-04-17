@@ -319,7 +319,7 @@ class Precond(torch.nn.Module):
 # Patch version of EDM2
 
 @persistence.persistent_class
-class Precond(torch.nn.Module):
+class Patch_Precond(torch.nn.Module):
     def __init__(self,
         img_resolution,         # Image resolution.
         img_channels,           # Image channels.
