@@ -318,3 +318,48 @@ class Precond(torch.nn.Module):
 #----------------------------------------------------------------------------
 # Patch version of EDM2
 
+@persistence.persistent_class
+class Precond(torch.nn.Module):
+    def __init__(self,
+        img_resolution,         # Image resolution.
+        img_channels,           # Image channels.
+        out_channels    = None, # Out channels.
+        label_dim,              # Class label dimensionality. 0 = unconditional.
+        use_fp16        = True, # Run the model at FP16 precision?
+        sigma_data      = 0.5,  # Expected standard deviation of the training data.
+        logvar_channels = 128,  # Intermediate dimensionality for uncertainty estimation.
+        **unet_kwargs,          # Keyword arguments for UNet.
+    ):
+        super().__init__()
+        self.img_resolution = img_resolution
+        self.img_channels = img_channels
+        self.label_dim = label_dim
+        self.use_fp16 = use_fp16
+        self.sigma_data = sigma_data
+        self.out_channels = img_channels if out_channels is None else out_channels
+        self.unet = UNet(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
+        self.logvar_fourier = MPFourier(logvar_channels)
+        self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
+
+    def forward(self, x, sigma, x_pos=None, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
+        x = x.to(torch.float32)
+        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
+        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
+        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
+
+        # Preconditioning weights.
+        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
+        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2).sqrt()
+        c_in = 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
+        c_noise = sigma.flatten().log() / 4
+
+        # Run the model
+        x_in = torch.cat([c_in * x, x_pos], dim=1) if x_pos is not None else c_in * x
+        F_x = self.unet(x_in, c_noise, class_labels, **unet_kwargs)
+        D_x = c_skip * x + c_out * F_x.to(torch.float32)
+        
+        # Estimate uncertainty if requested.
+        if return_logvar:
+            logvar = self.logvar_linear(self.logvar_fourier(c_noise)).reshape(-1, 1, 1, 1)
+            return D_x, logvar # u(sigma) in Equation 21
+        return D_x
