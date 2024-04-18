@@ -6,7 +6,7 @@
 # work. If not, see http://creativecommons.org/licenses/by-nc-sa/4.0/
 
 """Tool for creating ZIP/PNG based datasets."""
-
+""" open_image_folder() has been modified for labels as identity.txt instead of dataset.json. Raw data and identities are subfolders of source_dir"""
 from collections.abc import Iterator
 from dataclasses import dataclass
 import functools
