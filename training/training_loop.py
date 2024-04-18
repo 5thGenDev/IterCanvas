@@ -167,12 +167,8 @@ def training_loop(
     dist.print0('Setting up encoder...')
     encoder = dnnlib.util.construct_class_by_name(**encoder_kwargs)
     ref_image = encoder.encode_latents(torch.as_tensor(ref_image).to(device).unsqueeze(0))
-    dist.print0('Constructing network...')
-    interface_kwargs = dict(img_resolution=ref_image.shape[-1], img_channels=ref_image.shape[1], label_dim=ref_label.shape[-1])
-    net = dnnlib.util.construct_class_by_name(**network_kwargs, **interface_kwargs)
-    net.train().requires_grad_(True).to(device)
-
-    # Patch Diffusion stuffs
+    
+    ## Patch Diffusion add-on
     if encoder_kwargs.get('class_name') == 'training.encoders.StabilityVAEEncoder':
         p_list = np.array([(1 - real_p), real_p])
         patch_list = np.array([img_resolution // 2, img_resolution])
@@ -181,6 +177,18 @@ def training_loop(
         p_list = np.array([(1-real_p)*2/5, (1-real_p)*3/5, real_p])
         patch_list = np.array([img_resolution//4, img_resolution//2, img_resolution])
         batch_mul_avg = np.sum(np.array(p_list) * np.array([4, 2, 1]))
+
+    """ Previously, 
+    img_resolution, img_channels = dataset_obj.resolution, dataset_obj.num_channels
+    out_channels=4 if train_on_latents else dataset_obj.num_channels
+    """
+    out_channels=ref_image.shape[1]
+    ## -----------------------
+    
+    dist.print0('Constructing network...')
+    interface_kwargs = dict(img_resolution=ref_image.shape[-1], img_channels=ref_image.shape[1], out_channels, label_dim=ref_label.shape[-1])
+    net = dnnlib.util.construct_class_by_name(**network_kwargs, **interface_kwargs)
+    net.train().requires_grad_(True).to(device)
 
     # Print network summary.
     if dist.get_rank() == 0:
