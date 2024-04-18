@@ -337,7 +337,7 @@ def training_loop(
         state.cur_nimg += batch_size
         if ema is not None:
             ema.update(cur_nimg=state.cur_nimg, batch_size=batch_size * batch_mul_avg)
-        # ema_beta = 0.5 ** (batch_size * batch_mul_avg / max(ema_halflife_nimg, 1e-8))
+        # ema_beta = 0.5 ** (batch_size * batch_mul_avg / max(ema_halflife_nimg, 1e-8))        # for Patch-EDM1
         cumulative_training_time += time.time() - batch_start_time
 
 #----------------------------------------------------------------------------
