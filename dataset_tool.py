@@ -61,7 +61,7 @@ def is_image_ext(fname: Union[str, Path]) -> bool:
     return f'.{ext}' in PIL.Image.EXTENSION
 
 #----------------------------------------------------------------------------
-
+# Modify for the way Uni of Surrey organises CelebA dataset
 def open_image_folder(source_dir, *, max_images: Optional[int]) -> tuple[int, Iterator[ImageEntry]]:
     input_images = []
     def _recurse_dirs(root: str): # workaround Path().rglob() slowness
@@ -71,20 +71,22 @@ def open_image_folder(source_dir, *, max_images: Optional[int]) -> tuple[int, It
                     input_images.append(os.path.join(root, e.name))
                 elif e.is_dir():
                     _recurse_dirs(os.path.join(root, e.name))
-    _recurse_dirs(source_dir)
+    _recurse_dirs(os.path.join(source_dir, 'img_celeba'))
     input_images = sorted([f for f in input_images if is_image_ext(f)])
 
     arch_fnames = {fname: os.path.relpath(fname, source_dir).replace('\\', '/') for fname in input_images}
     max_idx = maybe_min(len(input_images), max_images)
 
-    # Load labels.
+    # Load labels - Adjust for identity_CelebA.txt rather than dataset.json which has no 'labels' key
     labels = dict()
-    meta_fname = os.path.join(source_dir, 'dataset.json')
+    meta_fname = os.path.join(source_dir, 'metadata/identity_CelebA.txt')
     if os.path.isfile(meta_fname):
         with open(meta_fname, 'r') as file:
-            data = json.load(file)['labels']
-            if data is not None:
-                labels = {x[0]: x[1] for x in data}
+            for line in file:
+                parts = line.strip().split()
+                if len(parts) == 2:
+                    filename, label = parts
+                    labels[filename] = label
 
     # No labels available => determine from top-level directory names.
     if len(labels) == 0:
