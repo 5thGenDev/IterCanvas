@@ -86,13 +86,13 @@ class Patch_EDM2Loss:
         return padded, images_pos
 
     def __call__(self, net, images, patch_size, labels=None):
-        images, images_pos = self.pachify(images, patch_size)                                            # where Patch Diffusion loss is used
+        images, images_pos = self.pachify(images, patch_size)                                            # where patching image happens
         
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
         noise = torch.randn_like(images) * sigma
-        denoised, logvar = net(images + noise, sigma, x_pos=images_pos, labels, return_logvar=True)      # where Patch Diffusion loss is used
+        denoised, logvar = net(images + noise, sigma, x_pos=images_pos, labels, return_logvar=True)      # where Patch Diffusion-precond occurs
         loss = (weight / logvar.exp()) * ((denoised - images) ** 2) + logvar
         return loss
         
@@ -169,6 +169,7 @@ def training_loop(
     ref_image = encoder.encode_latents(torch.as_tensor(ref_image).to(device).unsqueeze(0))
     
     ## Patch Diffusion add-on
+    batch_mul_dict = {512: 1, 256: 2, 128: 4, 64: 16, 32: 32, 16: 64}
     if encoder_kwargs.get('class_name') == 'training.encoders.StabilityVAEEncoder':
         p_list = np.array([(1 - real_p), real_p])
         patch_list = np.array([img_resolution // 2, img_resolution])
@@ -178,23 +179,25 @@ def training_loop(
         patch_list = np.array([img_resolution//4, img_resolution//2, img_resolution])
         batch_mul_avg = np.sum(np.array(p_list) * np.array([4, 2, 1]))
 
-    """ Previously, 
-    img_resolution, img_channels = dataset_obj.resolution, dataset_obj.num_channels
-    out_channels=4 if train_on_latents else dataset_obj.num_channels
-    """
+    # 'img_resolution, img_channels = dataset_obj.resolution, dataset_obj.num_channels'     # from EDM1
+    # out_channels=4 if train_on_latents else dataset_obj.num_channels                      # from Patch-EDM1
     out_channels=ref_image.shape[1]
-    ## -----------------------
+
+    # To incorporate the Coordinates-Conditions of patch locations, Patch Diffusion authors concatenated add-on coordinate channels with image channels as input (page 2)
+    img_channels=ref_image.shape[1]                                                         # EDM2
+    net_input_channels = img_channels + 2                                                   # from Patch-EDM1
     
     dist.print0('Constructing network...')
-    interface_kwargs = dict(img_resolution=ref_image.shape[-1], img_channels=ref_image.shape[1], out_channels, label_dim=ref_label.shape[-1])
+    interface_kwargs = dict(img_resolution=ref_image.shape[-1], img_channels=net_input_channels, out_channels, label_dim=ref_label.shape[-1])
     net = dnnlib.util.construct_class_by_name(**network_kwargs, **interface_kwargs)
     net.train().requires_grad_(True).to(device)
 
     # Print network summary.
     if dist.get_rank() == 0:
         misc.print_module_summary(net, [
-            torch.zeros([batch_gpu, net.img_channels, net.img_resolution, net.img_resolution], device=device),
+            torch.zeros([batch_gpu, img_channels, net.img_resolution, net.img_resolution], device=device),
             torch.ones([batch_gpu], device=device),
+            x_pos = torch.zeros([batch_gpu, 2, net.img_resolution, net.img_resolution], device=device),
             torch.zeros([batch_gpu, net.label_dim], device=device),
         ], max_nesting=2)
 
@@ -315,7 +318,7 @@ def training_loop(
                 del images_, labels_
                 # -------------------------- #
                 images = encoder.encode_latents(images.to(device))
-                loss = loss_fn(net=ddp, images=images, labels=labels.to(device))
+                loss = loss_fn(net=ddp, images=images, patch_size=patch_size, labels=labels.to(device))
                 training_stats.report('Loss/loss', loss)
                 loss.sum().mul(loss_scaling / batch_gpu_total / batch_mul).backward()
 
