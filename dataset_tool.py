@@ -85,8 +85,8 @@ def open_image_folder(source_dir, *, max_images: Optional[int]) -> tuple[int, It
             for line in file:
                 parts = line.strip().split()
                 if len(parts) == 2:
-                    filename, label = parts
-                    labels[filename] = label
+                    filename, label  = parts
+                    labels[filename] = int(label)
 
     # No labels available => determine from top-level directory names.
     if len(labels) == 0:
