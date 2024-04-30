@@ -92,7 +92,7 @@ class Patch_EDM2Loss:
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
         noise = torch.randn_like(images) * sigma
-        denoised, logvar = net(images + noise, sigma, x_pos=images_pos, labels, return_logvar=True)      # where Patch Diffusion-precond occurs
+        denoised, logvar = net(images + noise, sigma, labels, return_logvar=True, x_pos=images_pos)      # where Patch Diffusion-precond occurs
         loss = (weight / logvar.exp()) * ((denoised - images) ** 2) + logvar
         return loss
         
