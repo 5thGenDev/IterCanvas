@@ -188,7 +188,7 @@ def training_loop(
     net_input_channels = img_channels + 2                                                   # from Patch-EDM1
     
     dist.print0('Constructing network...')
-    interface_kwargs = dict(out_channels, img_resolution=ref_image.shape[-1], img_channels=net_input_channels, label_dim=ref_label.shape[-1])
+    interface_kwargs = dict(img_resolution=ref_image.shape[-1], img_channels=net_input_channels, out_channels=out_channels, label_dim=ref_label.shape[-1])
     net = dnnlib.util.construct_class_by_name(**network_kwargs, **interface_kwargs)
     net.train().requires_grad_(True).to(device)
 
