@@ -197,9 +197,11 @@ def training_loop(
         misc.print_module_summary(net, [
             torch.zeros([batch_gpu, img_channels, net.img_resolution, net.img_resolution], device=device),
             torch.ones([batch_gpu], device=device),
-            x_pos = torch.zeros([batch_gpu, 2, net.img_resolution, net.img_resolution], device=device),
             torch.zeros([batch_gpu, net.label_dim], device=device),
         ], max_nesting=2)
+        with torch.no_grad():
+            x_pos = torch.zeros([batch_gpu, 2, net.img_resolution, net.img_resolution], device=device)
+        
 
     # Setup training state.
     dist.print0('Setting up training state...')
