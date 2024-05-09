@@ -176,7 +176,7 @@ def parse_nimg(s):
 #Patch Diffusion options and bring back precondition option from EDM1
 @click.option('--real_p',           help='Full size image ratio', metavar='INT',                       type=click.FloatRange(min=0, max=1), default=0.5, show_default=True)
 @click.option('--progressive',      help='Training on latent embeddings', metavar='BOOL',              type=bool, default=False, show_default=True)
-@click.option('--precond',          help='Preconditioning & loss function', metavar='vp|ve|edm',       type=click.Choice(['edm2', 'pedm2']), default='pedm2', show_default=True)
+@click.option('--precond',          help='Preconditioning & loss function', metavar='edm|pedm2',       type=click.Choice(['edm2', 'pedm2']), default='pedm2', show_default=True)
 
 def cmdline(outdir, dry_run, **opts):
     """Train diffusion models according to the EDM2 recipe from the paper
